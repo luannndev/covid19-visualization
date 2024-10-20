@@ -5,6 +5,7 @@ library(tidyverse)
 library(lubridate)
 library(plotly)
 library(shinyWidgets)
+library(leaflet)
 
 url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
 covid_data <- read.csv(url)
@@ -26,6 +27,7 @@ covid_data_long <- covid_data %>%
 
 ui <- fluidPage(
   titlePanel("COVID-19 Fallzahlen weltweit"),
+  theme = shinythemes::shinytheme("flatly"),
 
   sidebarLayout(
     sidebarPanel(
@@ -39,13 +41,15 @@ ui <- fluidPage(
       textInput("plot_title", "Diagrammtitel:", value = "COVID-19 Fälle"),
       checkboxInput("smoothing", "Glättungslinie hinzufügen", FALSE),
       radioButtons("metric", "Wähle Metrik", choices = c("Kumulative Fälle", "Tägliche Fälle", "Fälle pro 100k")),
-      checkboxInput("show_test_capacity", "Hypothetische Testkapazitäten anzeigen", FALSE)
+      checkboxInput("show_test_capacity", "Hypothetische Testkapazitäten anzeigen", FALSE),
+      shinyWidgets::switchInput("theme_toggle", "Dark Mode", value = FALSE)
     ),
 
     mainPanel(
       tabsetPanel(
         tabPanel("Diagramm", plotlyOutput("plot")),
         tabPanel("Heatmap", plotlyOutput("heatmap_plot")),
+        tabPanel("Karte", leafletOutput("map")),
         tabPanel("Daten anzeigen", tableOutput("data_table")),
         downloadButton("download_plot", "Plot herunterladen"),
         downloadButton("download_data", "Daten herunterladen")
@@ -116,7 +120,7 @@ server <- function(input, output, session) {
       select(Country.Region, date, total_cases) %>%
       spread(Country.Region, total_cases)
 
-    p <- ggplot(data = melt(heat_data, id = "date"), aes(x = date, y = variable, fill = value)) +
+    p <- ggplot(data = reshape2::melt(heat_data, id = "date"), aes(x = date, y = variable, fill = value)) +
       geom_tile() +
       scale_fill_gradient(low = "white", high = "red") +
       labs(title = "COVID-19 Fälle Heatmap",
@@ -127,6 +131,24 @@ server <- function(input, output, session) {
       theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
     ggplotly(p)
+  })
+
+  output$map <- renderLeaflet({
+    data <- filtered_data() %>%
+      group_by(Country.Region) %>%
+      summarize(total_cases = sum(total_cases, na.rm = TRUE)) %>%
+      left_join(population_data, by = "Country.Region")
+
+    map <- leaflet(data) %>%
+      addTiles() %>%
+      addCircleMarkers(
+        ~longitude, ~latitude,
+        weight = 1,
+        radius = ~sqrt(total_cases) / 10000,
+        popup = ~paste0(Country.Region, ": ", total_cases, " Fälle")
+      )
+
+    map
   })
 
   output$data_table <- renderTable({
@@ -163,6 +185,11 @@ server <- function(input, output, session) {
       write.csv(filtered_data(), file)
     }
   )
+
+  observe({
+    theme <- if (input$theme_toggle) "slate" else "flatly"
+    session$sendCustomMessage("update-theme", list(theme = theme))
+  })
 }
 
 shinyApp(ui = ui, server = server)

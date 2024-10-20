@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     libudunits2-dev
 
-RUN R -e "install.packages(c('shiny', 'ggplot2', 'dplyr', 'tidyverse', 'lubridate', 'plotly', 'reshape2', 'shinyWidgets'), repos='https://cran.rstudio.com/')"
+RUN R -e "install.packages(c('shiny', 'ggplot2', 'dplyr', 'tidyverse', 'lubridate', 'plotly', 'reshape2', 'shinyWidgets', 'leaflet', 'shinythemes'), repos='https://cran.rstudio.com/')"
 
 COPY ./app /srv/shiny-server/
 
