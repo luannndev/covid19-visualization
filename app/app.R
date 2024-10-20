@@ -4,13 +4,15 @@ library(dplyr)
 library(tidyverse)
 library(lubridate)
 library(plotly)
+library(shinyWidgets)
 
 url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
 covid_data <- read.csv(url)
 
 population_data <- data.frame(
   Country.Region = unique(covid_data$Country.Region),
-  Population = sample(1e5:1e8, length(unique(covid_data$Country.Region)), replace = TRUE)
+  Population = sample(1e5:1e8, length(unique(covid_data$Country.Region)), replace = TRUE),
+  Continent = rep(c("Europe", "Asia", "Americas", "Africa", "Oceania"), length.out = length(unique(covid_data$Country.Region)))
 )
 
 covid_data_long <- covid_data %>%
@@ -27,7 +29,8 @@ ui <- fluidPage(
 
   sidebarLayout(
     sidebarPanel(
-      selectizeInput("countries", "Wähle Länder:", choices = unique(covid_data$Country.Region), selected = "Germany", multiple = TRUE),
+      selectInput("continent", "Wähle Kontinent:", choices = unique(population_data$Continent), selected = "Europe"),
+      selectizeInput("countries", "Wähle Länder:", choices = NULL, selected = NULL, multiple = TRUE),
       dateRangeInput("date_range", "Wähle Datumsbereich:",
                      start = min(covid_data_long$date),
                      end = max(covid_data_long$date)),
@@ -42,6 +45,7 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(
         tabPanel("Diagramm", plotlyOutput("plot")),
+        tabPanel("Heatmap", plotlyOutput("heatmap_plot")),
         tabPanel("Daten anzeigen", tableOutput("data_table")),
         downloadButton("download_plot", "Plot herunterladen"),
         downloadButton("download_data", "Daten herunterladen")
@@ -50,7 +54,9 @@ ui <- fluidPage(
   )
 )
 
-server <- function(input, output) {
+server <- function(input, output, session) {
+  updateSelectizeInput(session, 'countries', choices = unique(population_data$Country.Region[population_data$Continent == input$continent]), server = TRUE)
+
   filtered_data <- reactive({
     covid_data_long %>%
       filter(Country.Region %in% input$countries,
@@ -100,6 +106,25 @@ server <- function(input, output) {
         mutate(test_capacity = runif(n(), min = 1e3, max = 1e5))
       p <- p + geom_bar(aes(y = test_capacity), stat = "identity", alpha = 0.2, position = "dodge")
     }
+
+    ggplotly(p)
+  })
+
+  output$heatmap_plot <- renderPlotly({
+    data <- filtered_data()
+    heat_data <- data %>%
+      select(Country.Region, date, total_cases) %>%
+      spread(Country.Region, total_cases)
+
+    p <- ggplot(data = melt(heat_data, id = "date"), aes(x = date, y = variable, fill = value)) +
+      geom_tile() +
+      scale_fill_gradient(low = "white", high = "red") +
+      labs(title = "COVID-19 Fälle Heatmap",
+           x = "Datum",
+           y = "Land",
+           fill = "Fälle") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
     ggplotly(p)
   })
